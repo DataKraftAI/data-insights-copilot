@@ -36,4 +36,5 @@ if uploaded_file:
 
 # --- Fake AI Insights Button ---
 if st.button("✨ Generate AI Insights"):
-    st.warning("⚠️ This feature requires an OpenAI API key. (Disabled in demo)")
+    st.info("This feature uses OpenAI for insights. Disabled in demo mode.")
+
