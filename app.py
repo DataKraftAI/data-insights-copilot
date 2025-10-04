@@ -1,147 +1,107 @@
 import os
-import textwrap
-import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import streamlit as st
+from openai import OpenAI
 
-# --- Optional: OpenAI SDK presence check ---
-try:
-    from openai import OpenAI
-    OPENAI_READY = True
-except Exception:
-    OPENAI_READY = False
-
+# --- Page config ---
 st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
+
 st.title("📊 Data → Insights Copilot")
+st.caption("Upload a CSV, preview it, and get AI-driven insights with actions.")
 
-# ---------- Sidebar controls ----------
-with st.sidebar:
-    st.subheader("Settings")
-    audience = st.selectbox("Audience", ["Executive", "Operations", "Marketing"], index=0)
-    company_type = st.text_input("Company type (optional)", placeholder="e.g., Ecommerce, SaaS, Retail")
-    st.markdown("---")
-    use_ai = st.checkbox("Enable AI insights", value=True)
-    temp = st.slider("Creativity", 0.0, 1.0, 0.2, 0.1)
+# --- File upload ---
+uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
-# ---------- File upload ----------
-uploaded_file = st.file_uploader("Upload a CSV file", type="csv")
+# --- Flexible profile builder ---
+def build_flexible_profile(df, max_rows=20):
+    profile = []
+    profile.append(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+    profile.append(f"Columns: {list(df.columns)}")
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+    # Sample rows
+    sample = df.head(min(max_rows, len(df)))
+    profile.append("Sample rows:")
+    profile.append(sample.to_csv(index=False))
 
-    # Basic preview/stats
-    st.write("### Preview of data", df.head())
-    st.write("### Basic stats")
-    st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
+    # Numeric stats
+    num_summary = df.describe(include="number").transpose().round(2)
+    if not num_summary.empty:
+        profile.append("Numeric summary (mean, std, min, max):")
+        profile.append(num_summary.to_csv())
 
-    # Column pickers
-    numeric_cols = list(df.select_dtypes(include="number").columns)
-    all_cols = list(df.columns)
+    # Categorical stats
+    cat_summary = df.describe(include="object").transpose()
+    if not cat_summary.empty:
+        profile.append("Categorical summary (unique counts, top, freq):")
+        profile.append(cat_summary.to_csv())
 
-    st.write("### Column selection (optional but helps AI)")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        value_col = st.selectbox("Numeric value column", ["(none)"] + numeric_cols, index=1 if numeric_cols else 0)
-        value_col = None if value_col == "(none)" else value_col
-    with col2:
-        cat_col = st.selectbox("Category column", ["(none)"] + all_cols, index=0)
-        cat_col = None if cat_col == "(none)" else cat_col
-    with col3:
-        date_col = st.selectbox("Date column", ["(none)"] + all_cols, index=0)
-        date_col = None if date_col == "(none)" else date_col
+    return "\n".join(profile)
 
-    # Example chart (first numeric column)
-    if numeric_cols:
-        col = value_col or numeric_cols[0]
-        st.write(f"### Distribution of `{col}`")
-        fig, ax = plt.subplots()
-        df[col].hist(ax=ax)
-        st.pyplot(fig)
-    else:
-        st.info("No numeric columns found for plotting.")
+# --- Main logic if file uploaded ---
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
 
-    # ---------- AI Insights ----------
-    def build_profile(df, date_col, value_col, cat_col, audience, company_type):
-        parts = [f"Rows: {len(df)}, Cols: {len(df.columns)}"]
-        if value_col and value_col in df.columns and str(df[value_col].dtype) != "object":
-            parts.append(
-                f"Value column: {value_col}, "
-                f"mean={df[value_col].mean():.2f}, "
-                f"median={df[value_col].median():.2f}, "
-                f"sum={df[value_col].sum():.2f}"
-            )
-        if cat_col and cat_col in df.columns:
-            top = df[cat_col].value_counts().head(5).to_dict()
-            parts.append(f"Top {cat_col} (count): {top}")
-        if date_col and date_col in df.columns:
-            dts = pd.to_datetime(df[date_col], errors="coerce")
-            if dts.notna().any():
-                parts.append(f"Date range: {str(dts.min())} → {str(dts.max())}")
-        if company_type:
-            parts.append(f"Company type: {company_type}")
-        parts.append(f"Audience: {audience}")
-        return "\n".join(parts)
+        st.subheader("👀 Data Preview")
+        st.dataframe(df.head(20))
 
-    st.subheader("Insights & Actions (AI)")
-    st.caption("Uses an LLM to propose concrete, non-generic actions based on the quick profile above.")
+        st.subheader("📈 Quick Chart (if numeric)")
+        num_cols = df.select_dtypes(include="number").columns
+        if len(num_cols) > 0:
+            col_x = st.selectbox("Choose column for X-axis", options=df.columns)
+            col_y = st.selectbox("Choose numeric column for Y-axis", options=num_cols)
+            if col_x and col_y:
+                fig, ax = plt.subplots()
+                df.plot.scatter(x=col_x, y=col_y, ax=ax)
+                st.pyplot(fig)
+        else:
+            st.info("No numeric columns available for charting.")
 
-    if use_ai:
-        if st.button("✨ Generate AI Insights", key="ai_button"):
-            if not OPENAI_READY:
-                st.error("OpenAI SDK not installed. Add `openai` to requirements.txt")
-                st.stop()
-    
-            api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-            if not api_key:
-                st.info("No API key found. Add OPENAI_API_KEY to Streamlit Secrets.")
-                st.stop()
-    
+        # --- AI Insights ---
+        st.subheader("🤖 AI Insights")
+
+        # Build profile dynamically
+        profile_text = build_flexible_profile(df)
+
+        # Model + API setup
+        api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+        if not api_key:
+            st.warning("No API key found. Please set OPENAI_API_KEY in Streamlit secrets.")
+        else:
             client = OpenAI(api_key=api_key)
-    
-            # Always force the cheap model
-            model_name = "gpt-4o-mini"
-    
-            prompt = f"""
-            You are a senior business analyst.
-            Dataset profile:
-            {profile_text}
-            
-            Task:
-            1) Identify 3–5 notable patterns/trends/anomalies.
-            2) Explain likely causes in plain language.
-            3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
-            Format:
-            - **Findings**
-            - **Causes**
-            - **Actions**
-            """
-    
-            try:
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=float(temp),
-                    max_tokens=600,
-                )
-                st.subheader("AI Insights")
-                st.markdown(resp.choices[0].message.content)
-    
-            except Exception as e:
-                msg = str(e).lower()
-                if "quota" in msg or "insufficient" in msg or "exceeded" in msg:
-                    st.warning("⚠️ Demo limit exceeded for this month. Please check back next month.")
-                else:
+
+            if st.button("✨ Generate AI Insights", key="ai_button"):
+                prompt = f"""
+                You are a senior analyst.
+                The dataset has been uploaded as a CSV.
+
+                Data profile:
+                {profile_text}
+
+                Task:
+                1) Identify 3–5 notable patterns/trends/anomalies.
+                2) Explain likely causes in plain language (based on the dataset context).
+                3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
+
+                Format:
+                - **Findings**: bullet list
+                - **Causes**: bullet list
+                - **Actions**: numbered list with (Impact: …) and a one-line rationale.
+                """
+
+                try:
+                    resp = client.chat.completions.create(
+                        model="gpt-4o-mini",   # force the cheap model
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.4,
+                        max_tokens=700,
+                    )
+                    st.markdown(resp.choices[0].message.content)
+                    st.caption("⚡ Powered by gpt-4o-mini (cost-efficient)")
+
+                except Exception as e:
                     st.error(f"OpenAI error: {e}")
 
-else:
-    st.info("⬆️ Upload a CSV to begin")
-
-# --- Hide Streamlit chrome (optional) ---
-hide_footer_style = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-.stDeployButton {visibility: hidden;}
-</style>
-"""
-st.markdown(hide_footer_style, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error reading CSV: {e}")
