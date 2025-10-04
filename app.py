@@ -12,16 +12,18 @@ st.caption("Upload a CSV, preview it, and get AI-driven insights (token-efficien
 domain = st.selectbox(
     "Focus area for recommendations",
     [
+        
         "Auto (data-driven only)",
-        "Finance / Trading",
-        "Marketing / Growth",
-        "Sales",
-        "Product",
-        "Operations",
         "Customer Support / Success",
-        "HR / People",
-        "Risk / Compliance",
         "Engineering / Data",
+        "Finance",
+        "HR / People",
+        "Marketing / Growth",
+        "Operations",
+        "Product",
+        "Risk / Compliance",
+        "Sales",
+
     ],
     index=0,
 )
@@ -274,7 +276,6 @@ Constraints:
 
 
 {selected_hint}
-""".strip()
 
 
 """.strip()
