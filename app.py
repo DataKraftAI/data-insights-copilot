@@ -175,6 +175,8 @@ if uploaded is not None:
                 prompt = f"""
 You are a concise data analyst.
 
+Please analyse the data.
+
 The dataset was uploaded as a CSV.
 {data_block}
 
@@ -187,6 +189,9 @@ Format:
 - **Findings**: bullet list
 - **Causes**: bullet list
 - **Actions**: numbered list with (Impact: …) and a one-line rationale.
+Constraints:
+- Actions must be tactical and directly tied to the dataset’s columns (e.g., mention specific fields/thresholds).
+
 """.strip()
 
                 try:
