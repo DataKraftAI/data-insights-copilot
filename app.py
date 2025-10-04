@@ -205,6 +205,34 @@ if uploaded is not None:
             )
             data_block = f"PROFILE:\n{profile_text}"
 
+        # ---- Friendly notice about what the AI will read ----
+        ROWS, COLS = df.shape
+        PROFILE_HEAD = 20  # this is what build_flexible_profile uses for head()
+
+        if approx_tokens < 5000:
+            # FULL CSV path
+            st.success(
+                f"✅ **Using the entire file** (~{int(approx_tokens):,} tokens). "
+                "The AI will analyze **all rows and columns**."
+            )
+        else:
+            # PROFILE path
+            st.warning(
+                f"""### 📦 Large file detected
+        To keep things fast and within the demo budget, the AI will read a **compact summary** of your file (not every row).
+
+        **What the AI will read**
+        - Total size: **{ROWS:,} rows × {COLS} columns**
+        - **All column names**
+        - A preview of the **first {PROFILE_HEAD} rows**
+        - **Numeric column stats** (mean, std, min, max, quartiles)
+        - **Text column stats** (unique values, most frequent, frequency)
+
+        *Tip:* Insights may be broader than if we sent the entire file.
+        """,
+            )
+
+
         # Show friendly badge so users know exactly what we did
         st.caption(f"Mode: **{mode}** • {user_notice}")
 
