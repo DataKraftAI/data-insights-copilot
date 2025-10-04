@@ -1,57 +1,102 @@
+import os
+import textwrap
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-import os
-import textwrap
-
+# --- Optional: OpenAI SDK presence check ---
 try:
     from openai import OpenAI
     OPENAI_READY = True
 except Exception:
     OPENAI_READY = False
 
-def build_profile(df, date_col, value_col, cat_col, audience, company_type):
-    parts = [f"Rows: {len(df)}, Cols: {len(df.columns)}"]
-    if value_col and value_col in df.columns and str(df[value_col].dtype) != "object":
-        parts.append(f"Value column: {value_col}, mean={df[value_col].mean():.2f}, median={df[value_col].median():.2f}, sum={df[value_col].sum():.2f}")
-    if cat_col and cat_col in df.columns:
-        top = df[cat_col].value_counts().head(5).to_dict()
-        parts.append(f"Top {cat_col} (count): {top}")
-    if date_col and date_col in df.columns:
-        dts = pd.to_datetime(df[date_col], errors="coerce")
-        if dts.notna().any():
-            parts.append(f"Date range: {str(dts.min())} → {str(dts.max())}")
-    if company_type:
-        parts.append(f"Company type: {company_type}")
-    parts.append(f"Audience: {audience}")
-    return "\n".join(parts)
+st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
+st.title("📊 Data → Insights Copilot")
 
-st.subheader("Insights & Actions (AI)")
-st.caption("Uses an LLM to propose concrete, non-generic actions based on the quick profile above.")
-
-colA, colB = st.columns([1,1])
-with colA:
+# ---------- Sidebar controls ----------
+with st.sidebar:
+    st.subheader("Settings")
+    audience = st.selectbox("Audience", ["Executive", "Operations", "Marketing"], index=0)
+    company_type = st.text_input("Company type (optional)", placeholder="e.g., Ecommerce, SaaS, Retail")
+    st.markdown("---")
     use_ai = st.checkbox("Enable AI insights", value=True)
-with colB:
     temp = st.slider("Creativity", 0.0, 1.0, 0.2, 0.1)
 
-if use_ai:
-    profile_text = build_profile(df, date_col, value_col, cat_col, audience, company_type)
+# ---------- File upload ----------
+uploaded_file = st.file_uploader("Upload a CSV file", type="csv")
 
-    if st.button("✨ Generate AI Insights"):
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+
+    # Basic preview/stats
+    st.write("### Preview of data", df.head())
+    st.write("### Basic stats")
+    st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
+
+    # Column pickers
+    numeric_cols = list(df.select_dtypes(include="number").columns)
+    all_cols = list(df.columns)
+
+    st.write("### Column selection (optional but helps AI)")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        value_col = st.selectbox("Numeric value column", ["(none)"] + numeric_cols, index=1 if numeric_cols else 0)
+        value_col = None if value_col == "(none)" else value_col
+    with col2:
+        cat_col = st.selectbox("Category column", ["(none)"] + all_cols, index=0)
+        cat_col = None if cat_col == "(none)" else cat_col
+    with col3:
+        date_col = st.selectbox("Date column", ["(none)"] + all_cols, index=0)
+        date_col = None if date_col == "(none)" else date_col
+
+    # Example chart (first numeric column)
+    if numeric_cols:
+        col = value_col or numeric_cols[0]
+        st.write(f"### Distribution of `{col}`")
+        fig, ax = plt.subplots()
+        df[col].hist(ax=ax)
+        st.pyplot(fig)
+    else:
+        st.info("No numeric columns found for plotting.")
+
+    # ---------- AI Insights ----------
+    def build_profile(df, date_col, value_col, cat_col, audience, company_type):
+        parts = [f"Rows: {len(df)}, Cols: {len(df.columns)}"]
+        if value_col and value_col in df.columns and str(df[value_col].dtype) != "object":
+            parts.append(
+                f"Value column: {value_col}, "
+                f"mean={df[value_col].mean():.2f}, "
+                f"median={df[value_col].median():.2f}, "
+                f"sum={df[value_col].sum():.2f}"
+            )
+        if cat_col and cat_col in df.columns:
+            top = df[cat_col].value_counts().head(5).to_dict()
+            parts.append(f"Top {cat_col} (count): {top}")
+        if date_col and date_col in df.columns:
+            dts = pd.to_datetime(df[date_col], errors="coerce")
+            if dts.notna().any():
+                parts.append(f"Date range: {str(dts.min())} → {str(dts.max())}")
+        if company_type:
+            parts.append(f"Company type: {company_type}")
+        parts.append(f"Audience: {audience}")
+        return "\n".join(parts)
+
+    st.subheader("Insights & Actions (AI)")
+    st.caption("Uses an LLM to propose concrete, non-generic actions based on the quick profile above.")
+
+    if use_ai and st.button("✨ Generate AI Insights"):
         if not OPENAI_READY:
             st.error("OpenAI SDK not installed. Add `openai` to requirements.txt")
             st.stop()
 
-        # Prefer reading from Streamlit Secrets (set this in Streamlit Cloud)
         api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-
         if not api_key:
             st.info("No API key found. Add OPENAI_API_KEY to Streamlit Secrets to enable server-side calls.")
             st.stop()
 
         client = OpenAI(api_key=api_key)
+        profile_text = build_profile(df, date_col, value_col, cat_col, audience, company_type)
 
         prompt = f"""
 You are a senior business analyst.
@@ -77,7 +122,7 @@ Format:
 
         try:
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",        # fast, inexpensive, good quality
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=float(temp),
                 max_tokens=600,
@@ -89,43 +134,16 @@ Format:
                 st.warning("⚠️ Demo limit exceeded for this month. Please check back next month.")
             else:
                 st.error(f"OpenAI error: {e}")
+
 else:
-    st.info("Toggle ‘Enable AI insights’ to generate findings and actions.")
+    st.info("⬆️ Upload a CSV to begin")
 
-
+# --- Hide Streamlit chrome (optional) ---
 hide_footer_style = """
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {visibility: hidden;}
-    </style>
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {visibility: hidden;}
+</style>
 """
 st.markdown(hide_footer_style, unsafe_allow_html=True)
-
-
-st.title("📊 Data → Insights Copilot")
-
-uploaded_file = st.file_uploader("Upload a CSV file", type="csv")
-
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("### Preview of data", df.head())
-
-    st.write("### Basic stats")
-    st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
-
-    # Example chart (first numeric column)
-    numeric_cols = df.select_dtypes(include="number").columns
-    if len(numeric_cols) > 0:
-        col = numeric_cols[0]
-        st.write(f"### Distribution of `{col}`")
-        fig, ax = plt.subplots()
-        df[col].hist(ax=ax)
-        st.pyplot(fig)
-    else:
-        st.info("No numeric columns found for plotting.")
-
-# --- Fake AI Insights Button ---
-if st.button("✨ Generate AI Insights"):
-    st.info("This feature uses OpenAI for insights. Disabled in demo mode.")
-
