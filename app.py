@@ -5,6 +5,15 @@ import streamlit as st
 from openai import OpenAI
 
 # ---- Page config ----
+st.markdown("""
+<style>
+/* Enlarge spinner text */
+div[data-testid="stSpinner"] p { font-size: 1.2rem; font-weight: 600; }
+/* Optional: make caption text a bit bolder too */
+div[data-testid="stCaptionContainer"] { font-size: 0.95rem; }
+</style>
+""", unsafe_allow_html=True)
+
 st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
 st.title("📊 Data → Insights Copilot")
 st.caption("Upload a CSV, preview it, and get AI-driven insights (token-efficient).")
@@ -27,6 +36,24 @@ domain = st.selectbox(
     ],
     index=0,
 )
+
+# ---- tiny coercion step so numeric columns are detected ----
+def coerce_numeric_columns(df, min_fraction=0.6):
+    """
+    Try to convert object columns that look numeric (commas, %, dashes) into floats.
+    If at least `min_fraction` of non-null values convert, keep the numeric column.
+    """
+    import numpy as np
+    new_df = df.copy()
+    for col in df.columns:
+        if new_df[col].dtype == "object":
+            s = new_df[col].astype(str).str.replace(",", "", regex=False).str.replace("%", "", regex=False).str.strip()
+            s = s.replace({"-": None, "": None})
+            coerced = pd.to_numeric(s, errors="coerce")
+            non_null = coerced.notna().sum()
+            if len(coerced) and (non_null / len(coerced) >= min_fraction):
+                new_df[col] = coerced
+    return new_df
 
 
 # ---- Robust CSV loader ----
@@ -156,13 +183,15 @@ uploaded = st.file_uploader("Upload your CSV file", type=["csv"])
 if uploaded is not None:
     try:
         df = read_csv_robust(uploaded)
+        df = coerce_numeric_columns(df)  # NEW: make numeric-looking columns truly numeric
+
 
         st.subheader("👀 Data Preview")
         st.dataframe(df.head(20))
 
         profile_text = build_flexible_profile(df)
 
-        st.subheader("📈 Quick Chart (if numeric)")
+        st.subheader("📈 Quick Chart")
         num_cols = df.select_dtypes(include="number").columns
         if len(num_cols) > 0:
             col_x = st.selectbox("Choose column for X-axis", options=df.columns, key="x")
@@ -172,7 +201,8 @@ if uploaded is not None:
                 df.plot.scatter(x=col_x, y=col_y, ax=ax)
                 st.pyplot(fig)
         else:
-            st.info("No numeric columns available for charting.")
+            st.info("No numeric *values* detected after parsing — chart skipped. (You can still generate AI insights below.)")
+
 
         # ---- AI Insights ----
         st.subheader("🤖 AI Insights")
