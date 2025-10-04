@@ -9,6 +9,24 @@ st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
 st.title("📊 Data → Insights Copilot")
 st.caption("Upload a CSV, preview it, and get AI-driven insights (token-efficient).")
 
+domain = st.selectbox(
+    "Focus area for recommendations",
+    [
+        "Auto (data-driven only)",
+        "Finance / Trading",
+        "Marketing / Growth",
+        "Sales",
+        "Product",
+        "Operations",
+        "Customer Support / Success",
+        "HR / People",
+        "Risk / Compliance",
+        "Engineering / Data",
+    ],
+    index=0,
+)
+
+
 # ---- Robust CSV loader ----
 def read_csv_robust(upload):
     """
@@ -131,6 +149,8 @@ def build_flexible_profile(df, max_rows=20):
 # ---- App body ----
 uploaded = st.file_uploader("Upload your CSV file", type=["csv"])
 
+
+
 if uploaded is not None:
     try:
         df = read_csv_robust(uploaded)
@@ -171,6 +191,65 @@ if uploaded is not None:
             approx_tokens = len(csv_text) / 4 if csv_text else 999999
             data_block = f"FULL CSV:\n{csv_text}" if approx_tokens < 5000 else f"PROFILE:\n{profile_text}"
 
+            # --- Domain guidance (kept short + generic) ---
+            domain_hints = {
+                "Auto (data-driven only)": """
+            Constraints:
+            - Actions must be tactical and directly tied to the dataset’s columns (mention fields/thresholds).
+            - Avoid organizational/process/marketing advice unless explicitly grounded in the data.
+            """,
+                "Finance": """
+            Constraints (Finance):
+            - Focus on financial signals in the data: e.g., price/return behavior, volatility/variance, spreads/margins, volume/turnover,
+            cash-flow or P&L drivers, risk/outlier detection, time-series patterns, and benchmark comparisons if present.
+            - Prefer actions like: restrict to liquid/in-range instruments; set/adjust thresholds (e.g., spread/variance/limit alerts);
+            use limit/conditional orders or rebalance windows; monitor spikes/divergences relative to recent baseline.
+            - Do NOT propose org/team/process/marketing changes unless they are explicitly evidenced by the data.
+            """,
+                "Marketing / Growth": """
+            Constraints (Marketing/Growth):
+            - Focus on acquisition, activation, conversion, retention, channel and creative performance, CAC/LTV proxies if present.
+            - Prefer actions like: reallocate to higher-ROI channels, test X vs Y, tighten targeting based on segment lift.
+            """,
+                "Sales": """
+            Constraints (Sales):
+            - Focus on pipeline stages, win/loss, ACV, velocity, territory/segment and rep performance.
+            - Prefer actions like: fix stage bottlenecks, target high-propensity segments, tighten qualification rules.
+            """,
+                "Product": """
+            Constraints (Product):
+            - Focus on usage cohorts, feature adoption, activation, retention/churn drivers, and key drop-off steps.
+            - Prefer actions like: ship quick wins for sticky features, address drop-off points, A/B critical flows.
+            """,
+                "Operations": """
+            Constraints (Operations):
+            - Focus on throughput, cycle time, SLA, defects, costs, and bottlenecks.
+            - Prefer actions like: set SLA/threshold alerts, remove queues, standardize high-variance steps.
+            """,
+                "Customer Support / Success": """
+            Constraints (CS/CX):
+            - Focus on CSAT/NPS, first response/resolution time, contact drivers, churn risk signals.
+            - Prefer actions like: deflect top drivers, improve time-to-first-response, proactive outreach to at-risk cohorts.
+            """,
+                "HR / People": """
+            Constraints (HR/People):
+            - Focus on hiring funnel, time-to-fill, retention, performance distribution, engagement.
+            - Prefer actions like: strengthen top-of-funnel sources, address attrition hotspots, refine leveling/comp bands.
+            """,
+                "Risk / Compliance": """
+            Constraints (Risk/Compliance):
+            - Focus on anomalies, threshold breaches, exposure concentration, control failures.
+            - Prefer actions like: escalate breaches, set tighter limits/alerts, add monitoring on high-risk segments.
+            """,
+                "Engineering / Data": """
+            Constraints (Eng/Data):
+            - Focus on latency, error rates, infra cost, data quality/freshness, pipeline reliability.
+            - Prefer actions like: fix P95 outliers, add alerts, optimize hot paths, backfill data gaps.
+            """,
+            }
+            selected_hint = domain_hints.get(domain, "")
+
+
             if st.button("✨ Generate AI Insights", key="ai_button"):
                 prompt = f"""
 You are a concise data analyst.
@@ -189,8 +268,14 @@ Format:
 - **Findings**: bullet list
 - **Causes**: bullet list
 - **Actions**: numbered list with (Impact: …) and a one-line rationale.
+
 Constraints:
 - Actions must be tactical and directly tied to the dataset’s columns (e.g., mention specific fields/thresholds).
+
+
+{selected_hint}
+""".strip()
+
 
 """.strip()
 
