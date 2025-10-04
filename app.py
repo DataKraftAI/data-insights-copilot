@@ -85,55 +85,53 @@ if uploaded_file:
     st.subheader("Insights & Actions (AI)")
     st.caption("Uses an LLM to propose concrete, non-generic actions based on the quick profile above.")
 
-    if use_ai and st.button("✨ Generate AI Insights"):
-        if not OPENAI_READY:
-            st.error("OpenAI SDK not installed. Add `openai` to requirements.txt")
-            st.stop()
-
-        api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-        if not api_key:
-            st.info("No API key found. Add OPENAI_API_KEY to Streamlit Secrets to enable server-side calls.")
-            st.stop()
-
-        client = OpenAI(api_key=api_key)
-        profile_text = build_profile(df, date_col, value_col, cat_col, audience, company_type)
-
-        prompt = f"""
-You are a senior business analyst.
-
-Context:
-- Company type: {company_type or 'N/A'}
-- Audience: {audience}
-
-Data summary (compact):
-{profile_text}
-
-Task:
-1) Identify 3–5 notable patterns/trends/anomalies.
-2) Explain likely business causes in plain language.
-3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
-4) Keep it concise and non-generic. Avoid clichés.
-
-Format:
-- **Findings**: bullet list
-- **Causes**: bullet list
-- **Actions**: numbered list with (Impact: …) and a one-line rationale
-        """.strip()
-
-        try:
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=float(temp),
-                max_tokens=600,
-            )
-            st.markdown(resp.choices[0].message.content)
-        except Exception as e:
-            msg = str(e).lower()
-            if "quota" in msg or "insufficient" in msg or "exceeded" in msg:
-                st.warning("⚠️ Demo limit exceeded for this month. Please check back next month.")
-            else:
-                st.error(f"OpenAI error: {e}")
+    if use_ai:
+        if st.button("✨ Generate AI Insights", key="ai_button"):
+            if not OPENAI_READY:
+                st.error("OpenAI SDK not installed. Add `openai` to requirements.txt")
+                st.stop()
+    
+            api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+            if not api_key:
+                st.info("No API key found. Add OPENAI_API_KEY to Streamlit Secrets.")
+                st.stop()
+    
+            client = OpenAI(api_key=api_key)
+    
+            # Always force the cheap model
+            model_name = "gpt-4o-mini"
+    
+            prompt = f"""
+            You are a senior business analyst.
+            Dataset profile:
+            {profile_text}
+            
+            Task:
+            1) Identify 3–5 notable patterns/trends/anomalies.
+            2) Explain likely causes in plain language.
+            3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
+            Format:
+            - **Findings**
+            - **Causes**
+            - **Actions**
+            """
+    
+            try:
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=float(temp),
+                    max_tokens=600,
+                )
+                st.subheader("AI Insights")
+                st.markdown(resp.choices[0].message.content)
+    
+            except Exception as e:
+                msg = str(e).lower()
+                if "quota" in msg or "insufficient" in msg or "exceeded" in msg:
+                    st.warning("⚠️ Demo limit exceeded for this month. Please check back next month.")
+                else:
+                    st.error(f"OpenAI error: {e}")
 
 else:
     st.info("⬆️ Upload a CSV to begin")
