@@ -253,44 +253,47 @@ if uploaded is not None:
 
 
             if st.button("✨ Generate AI Insights", key="ai_button"):
-                prompt = f"""
-You are a concise data analyst.
+                with st.spinner("⏳ Processing, please wait..."):
+                    prompt = f"""
+                            You are a concise data analyst.
 
-Please analyse the data.
+                            Please analyse the data.
 
-The dataset was uploaded as a CSV.
-{data_block}
+                            The dataset was uploaded as a CSV.
+                            {data_block}
 
-Task:
-1) Identify 3–5 notable patterns/trends/anomalies.
-2) Explain likely causes in plain language (based on the data you see).
-3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
+                            Task:
+                            1) Identify 3–5 notable patterns/trends/anomalies.
+                            2) Explain likely causes in plain language (based on the data you see).
+                            3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
 
-Format:
-- **Findings**: bullet list
-- **Causes**: bullet list
-- **Actions**: numbered list with (Impact: …) and a one-line rationale.
+                            Format:
+                            - **Findings**: bullet list
+                            - **Causes**: bullet list
+                            - **Actions**: numbered list with (Impact: …) and a one-line rationale.
 
-Constraints:
-- Actions must be tactical and directly tied to the dataset’s columns (e.g., mention specific fields/thresholds).
-
-
-{selected_hint}
+                            Constraints:
+                            - Actions must be tactical and directly tied to the dataset’s columns (e.g., mention specific fields/thresholds).
 
 
-""".strip()
+                            {selected_hint}
 
-                try:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.4,
-                        max_tokens=700,
-                    )
-                    st.markdown(resp.choices[0].message.content)
-                    st.caption("⚡ Powered by gpt-4o-mini (full-data mode engages automatically for small files)")
-                except Exception as e:
-                    st.error(f"OpenAI error: {e}")
+
+                            """.strip()
+
+                    try:
+                        resp = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.4,
+                            max_tokens=700,
+                        )
+
+                        st.success("✅ Done!")
+                        st.markdown(resp.choices[0].message.content)
+                        st.caption("⚡ Powered by gpt-4o-mini (full-data mode engages automatically for small files)")
+                    except Exception as e:
+                        st.error(f"OpenAI error: {e}")
 
     except Exception as e:
         st.error(f"Error reading CSV: {e}")
