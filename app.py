@@ -46,6 +46,9 @@ if uploaded_file is not None:
         st.subheader("👀 Data Preview")
         st.dataframe(df.head(20))
 
+        # ✅ Build profile immediately after loading the file
+        profile_text = build_flexible_profile(df)
+
         st.subheader("📈 Quick Chart (if numeric)")
         num_cols = df.select_dtypes(include="number").columns
         if len(num_cols) > 0:
