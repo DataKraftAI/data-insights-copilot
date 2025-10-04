@@ -46,7 +46,7 @@ if uploaded_file is not None:
         st.subheader("👀 Data Preview")
         st.dataframe(df.head(20))
 
-        # ✅ Build profile immediately after loading the file
+        # ✅ Build profile immediately
         profile_text = build_flexible_profile(df)
 
         st.subheader("📈 Quick Chart (if numeric)")
@@ -64,13 +64,11 @@ if uploaded_file is not None:
         # --- AI Insights ---
         st.subheader("🤖 AI Insights")
 
-        # Build profile dynamically
-        profile_text = build_flexible_profile(df)
-
         # Model + API setup
         api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
         if not api_key:
             st.warning("No API key found. Please set OPENAI_API_KEY in Streamlit secrets.")
+            st.stop()
         else:
             client = OpenAI(api_key=api_key)
 
@@ -95,13 +93,13 @@ if uploaded_file is not None:
 
                 try:
                     resp = client.chat.completions.create(
-                        model="gpt-4o-mini",   # force the cheap model
+                        model="gpt-4o-mini",   # cost-efficient
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.4,
                         max_tokens=700,
                     )
                     st.markdown(resp.choices[0].message.content)
-                    st.caption("⚡ Powered by gpt-4o-mini (cost-efficient)")
+                    st.caption("⚡ Powered by gpt-4o-mini")
 
                 except Exception as e:
                     st.error(f"OpenAI error: {e}")
