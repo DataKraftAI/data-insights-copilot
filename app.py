@@ -4,11 +4,10 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from openai import OpenAI
 
-# --- Page config ---
 st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
 
 st.title("📊 Data → Insights Copilot")
-st.caption("Upload a CSV, preview it, and get AI-driven insights with actions.")
+st.caption("Upload a CSV, preview it, and get AI-driven insights.")
 
 # --- File upload ---
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
@@ -46,7 +45,7 @@ if uploaded_file is not None:
         st.subheader("👀 Data Preview")
         st.dataframe(df.head(20))
 
-        # ✅ Build profile immediately
+        # Build profile
         profile_text = build_flexible_profile(df)
 
         st.subheader("📈 Quick Chart (if numeric)")
@@ -64,7 +63,6 @@ if uploaded_file is not None:
         # --- AI Insights ---
         st.subheader("🤖 AI Insights")
 
-        # Model + API setup
         api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
         if not api_key:
             st.warning("No API key found. Please set OPENAI_API_KEY in Streamlit secrets.")
@@ -75,25 +73,24 @@ if uploaded_file is not None:
             if st.button("✨ Generate AI Insights", key="ai_button"):
                 prompt = f"""
                 You are a senior analyst.
-                The dataset has been uploaded as a CSV.
+                Here is a dataset summary:
 
-                Data profile:
                 {profile_text}
 
                 Task:
                 1) Identify 3–5 notable patterns/trends/anomalies.
-                2) Explain likely causes in plain language (based on the dataset context).
+                2) Explain likely causes in plain language.
                 3) Output 3 prioritized actions with expected impact (Low/Med/High) and why.
 
                 Format:
-                - **Findings**: bullet list
-                - **Causes**: bullet list
-                - **Actions**: numbered list with (Impact: …) and a one-line rationale.
+                - **Findings**
+                - **Causes**
+                - **Actions**
                 """
 
                 try:
                     resp = client.chat.completions.create(
-                        model="gpt-4o-mini",   # cost-efficient
+                        model="gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.4,
                         max_tokens=700,
