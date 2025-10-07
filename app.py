@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from openai import OpenAI
 
-# -----------------------------
+# =========================================================
 # Page config & small style nits
-# -----------------------------
+# =========================================================
 st.set_page_config(page_title="Data → Insights Copilot", layout="wide")
 st.markdown("""
 <style>
@@ -15,33 +15,199 @@ div[data-testid="stCaptionContainer"] { font-size: 0.95rem; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Data → Insights Copilot")
-st.caption("Upload a CSV, preview it, and get AI-driven insights (token-efficient).")
+# =========================================================
+# Language bootstrap (dropdown + ?lang=de support)
+# =========================================================
+def get_query_lang_default() -> str:
+    # Streamlit stable (1.37+) offers st.query_params; fall back to experimental API
+    try:
+        lang = (st.query_params.get("lang") or "en").lower()
+    except Exception:
+        try:
+            params = st.experimental_get_query_params()
+            lang = (params.get("lang", ["en"])[0] or "en").lower()
+        except Exception:
+            lang = "en"
+    return "de" if lang.startswith("de") else "en"
 
-# -----------------------------
-# Sidebar — Domain selector
-# -----------------------------
+if "lang" not in st.session_state:
+    st.session_state["lang"] = get_query_lang_default()
+
+def set_lang(new_lang: str):
+    st.session_state["lang"] = new_lang
+    # update URL param (nice for sharing links)
+    try:
+        st.query_params["lang"] = new_lang
+    except Exception:
+        st.experimental_set_query_params(lang=new_lang)
+    st.rerun()
+
+LANG = st.session_state["lang"]
+
+# =========================================================
+# Localization strings
+# =========================================================
+TXT = {
+    "en": {
+        "title": "📊 Data → Insights Copilot",
+        "caption": "Upload a CSV, preview it, and get AI-driven insights (token-efficient).",
+
+        "sidebar_lang": "Language",
+        "sidebar_domain": "Focus area for recommendations",
+
+        "uploader": "Upload your CSV file",
+        "preview_h": "👀 Data Preview",
+        "chart_h": "📈 Quick Chart",
+        "chart_x": "Choose column for X-axis",
+        "chart_y": "Choose numeric column for Y-axis",
+        "chart_no_num": "No numeric values detected after parsing — chart skipped. (You can still generate AI insights below.)",
+
+        "ai_h": "🤖 AI Insights",
+        "adv": "Advanced",
+        "creativity": "Creativity",
+        "creativity_help": "Lower = more factual/grounded. Higher = more speculative language and bolder suggestions.",
+
+        "notice_full_h": "✅ Full file will be analyzed",
+        "notice_full_p": "The AI will read **all rows and columns** of your file  \n(~{rows} rows × {cols} columns, ~{tok} tokens).",
+
+        "notice_large_h": "📦 Large file detected",
+        "notice_large_p": (
+            "To keep things fast and within the demo budget, the AI will analyze a **compact summary** instead of every row.\n\n"
+            "**What the AI will see:**\n"
+            "- Total size: **{rows} rows × {cols} columns**\n"
+            "- All **column names**\n"
+            "- First **{head} rows** as a preview\n"
+            "- **Numeric stats** (mean, std, min, max, quartiles)\n"
+            "- **Text stats** (unique values, most frequent, frequency)\n\n"
+            "*Tip: Insights may be broader than if we sent the entire file.*"
+        ),
+
+        "btn_generate": "✨ Generate AI Insights",
+        "spinner": "⏳ Processing, please wait...",
+        "done": "✅ Done!",
+        "no_key": "No API key found. Set OPENAI_API_KEY in Streamlit → Settings → Secrets.",
+        "openai_err": "OpenAI error: {err}",
+        "upload_prompt": "⬆️ Upload a CSV to begin.",
+
+        "strike_last": "### Strike vs Last Price",
+        "strike_iv": "### Strike vs Implied Volatility",
+
+        "caption_model": "⚡ Powered by gpt-4o-mini • Full data for small files, compact profile for large files.",
+
+        # Domains (UI labels)
+        "d_auto": "Auto (data-driven only)",
+        "d_cs": "Customer Support / Success",
+        "d_eng": "Engineering / Data",
+        "d_fin": "Finance",
+        "d_hr": "HR / People",
+        "d_mkt": "Marketing / Growth",
+        "d_ops": "Operations",
+        "d_prod": "Product",
+        "d_risk": "Risk / Compliance",
+        "d_sales": "Sales",
+    },
+    "de": {
+        "title": "📊 Data → Insights Copilot",
+        "caption": "CSV hochladen, Vorschau ansehen und KI-gestützte Insights erhalten (token-effizient).",
+
+        "sidebar_lang": "Sprache",
+        "sidebar_domain": "Fokusbereich für Empfehlungen",
+
+        "uploader": "CSV-Datei hochladen",
+        "preview_h": "👀 Datenvorschau",
+        "chart_h": "📈 Schnell-Chart",
+        "chart_x": "Spalte für X-Achse wählen",
+        "chart_y": "Numerische Spalte für Y-Achse wählen",
+        "chart_no_num": "Keine numerischen Werte erkannt — Chart übersprungen. (KI-Insights unten sind weiterhin möglich.)",
+
+        "ai_h": "🤖 KI-Insights",
+        "adv": "Erweitert",
+        "creativity": "Kreativität",
+        "creativity_help": "Niedrig = faktenbasiert. Hoch = spekulativer und mutigere Vorschläge.",
+
+        "notice_full_h": "✅ Ganze Datei wird analysiert",
+        "notice_full_p": "Die KI liest **alle Zeilen und Spalten** Ihrer Datei  \n(~{rows} Zeilen × {cols} Spalten, ~{tok} Tokens).",
+
+        "notice_large_h": "📦 Große Datei erkannt",
+        "notice_large_p": (
+            "Zur Geschwindigkeit und Budget-Schonung analysiert die KI eine **kompakte Zusammenfassung** statt jeder einzelnen Zeile.\n\n"
+            "**Was die KI sieht:**\n"
+            "- Gesamtgröße: **{rows} Zeilen × {cols} Spalten**\n"
+            "- Alle **Spaltennamen**\n"
+            "- Erste **{head} Zeilen** als Vorschau\n"
+            "- **Numerik-Statistik** (Mittelwert, Std, Min, Max, Quartile)\n"
+            "- **Text-Statistik** (Unique-Werte, häufigste Werte, Häufigkeit)\n\n"
+            "*Hinweis: Insights sind ggf. breiter als bei vollständiger Datei.*"
+        ),
+
+        "btn_generate": "✨ KI-Insights erzeugen",
+        "spinner": "⏳ Verarbeitung… bitte warten.",
+        "done": "✅ Fertig!",
+        "no_key": "Kein API-Key gefunden. OPENAI_API_KEY in Streamlit → Settings → Secrets setzen.",
+        "openai_err": "OpenAI-Fehler: {err}",
+        "upload_prompt": "⬆️ CSV hochladen, um zu starten.",
+
+        "strike_last": "### Strike vs. Letzter Preis",
+        "strike_iv": "### Strike vs. Implizite Volatilität",
+
+        "caption_model": "⚡ Basis: gpt-4o-mini • Vollständige Daten für kleine Dateien, kompaktes Profil für große Dateien.",
+
+        # Domains (UI labels)
+        "d_auto": "Auto (nur datengetrieben)",
+        "d_cs": "Customer Support / Success",
+        "d_eng": "Engineering / Data",
+        "d_fin": "Finanzen",
+        "d_hr": "HR / People",
+        "d_mkt": "Marketing / Growth",
+        "d_ops": "Operations",
+        "d_prod": "Produkt",
+        "d_risk": "Risk / Compliance",
+        "d_sales": "Sales",
+    },
+}
+
+# Domain hint keys (stable identifiers) and localized labels
+DOMAIN_KEYS = [
+    ("auto",  "d_auto"),
+    ("cs",    "d_cs"),
+    ("eng",   "d_eng"),
+    ("fin",   "d_fin"),
+    ("hr",    "d_hr"),
+    ("mkt",   "d_mkt"),
+    ("ops",   "d_ops"),
+    ("prod",  "d_prod"),
+    ("risk",  "d_risk"),
+    ("sales", "d_sales"),
+]
+
+# =========================================================
+# UI — Title / Caption
+# =========================================================
+st.title(TXT[LANG]["title"])
+st.caption(TXT[LANG]["caption"])
+
+# =========================================================
+# Sidebar — Language + Domain selector
+# =========================================================
 with st.sidebar:
-    domain = st.selectbox(
-        "Focus area for recommendations",
-        [
-            "Auto (data-driven only)",
-            "Customer Support / Success",
-            "Engineering / Data",
-            "Finance",
-            "HR / People",
-            "Marketing / Growth",
-            "Operations",
-            "Product",
-            "Risk / Compliance",
-            "Sales",
-        ],
-        index=0,
-    )
+    # Language selector
+    lang_label = TXT[LANG]["sidebar_lang"]
+    new_lang = st.selectbox(lang_label, ["English", "Deutsch"], index=(0 if LANG=="en" else 1))
+    picked = "en" if new_lang.startswith("English") else "de"
+    if picked != LANG:
+        set_lang(picked)
 
-# -----------------------------
+    # Domain selector (localized labels → stable key)
+    domain_labels = [TXT[LANG][label_key] for _, label_key in DOMAIN_KEYS]
+    domain_choice = st.selectbox(TXT[LANG]["sidebar_domain"], domain_labels, index=0)
+
+    # map label back to stable key
+    inv_map = {TXT[LANG][label_key]: key for key, label_key in DOMAIN_KEYS}
+    domain_key = inv_map.get(domain_choice, "auto")
+
+# =========================================================
 # CSV loading helpers
-# -----------------------------
+# =========================================================
 def read_csv_robust(upload):
     """
     Read weird CSVs reliably:
@@ -163,41 +329,41 @@ def build_flexible_profile(df, max_rows=20):
 
     return "\n".join(parts)
 
-# -----------------------------
+# =========================================================
 # Upload & preview
-# -----------------------------
-uploaded = st.file_uploader("Upload your CSV file", type=["csv"])
+# =========================================================
+uploaded = st.file_uploader(TXT[LANG]["uploader"], type=["csv"])
 df = None
 if uploaded is not None:
     try:
         df = read_csv_robust(uploaded)
         df = coerce_numeric_columns(df)
-        st.subheader("👀 Data Preview")
+        st.subheader(TXT[LANG]["preview_h"])
         st.dataframe(df.head(20))
     except Exception as e:
         st.error(f"Error reading CSV: {e}")
 
-# -----------------------------
-# Quick chart(s)
-# -----------------------------
+# =========================================================
+# Quick charts
+# =========================================================
 if df is not None:
-    st.subheader("📈 Quick Chart")
+    st.subheader(TXT[LANG]["chart_h"])
     num_cols = df.select_dtypes(include="number").columns
     if len(num_cols) > 0:
-        col_x = st.selectbox("Choose column for X-axis", options=df.columns, key="x")
-        col_y = st.selectbox("Choose numeric column for Y-axis", options=num_cols, key="y")
+        col_x = st.selectbox(TXT[LANG]["chart_x"], options=df.columns, key="x")
+        col_y = st.selectbox(TXT[LANG]["chart_y"], options=num_cols, key="y")
         if col_x and col_y:
             fig, ax = plt.subplots()
             df.plot.scatter(x=col_x, y=col_y, ax=ax)
             st.pyplot(fig)
     else:
-        st.info("No numeric values detected after parsing — chart skipped. (You can still generate AI insights below.)")
+        st.info(TXT[LANG]["chart_no_num"])
 
     # Optional quick finance-style plots if common columns exist
-    lc = [c.lower().strip() for c in df.columns]
     def col_match(name, aliases):
         for c in df.columns:
-            if c.lower().strip() == name or c.lower().strip() in aliases:
+            lc = c.lower().strip()
+            if lc == name or lc in aliases:
                 return c
         return None
     strike_col = col_match("strike", {"strike"})
@@ -206,7 +372,7 @@ if df is not None:
     type_col   = col_match("type", {"option type"})
 
     if strike_col and last_col:
-        st.write("### Strike vs Last Price")
+        st.write(TXT[LANG]["strike_last"])
         fig, ax = plt.subplots()
         if type_col and df[type_col].dropna().nunique() <= 3:
             for t, sub in df.groupby(df[type_col].fillna("Unknown")):
@@ -216,23 +382,23 @@ if df is not None:
         st.pyplot(fig)
 
     if strike_col and iv_col:
-        st.write("### Strike vs Implied Volatility")
+        st.write(TXT[LANG]["strike_iv"])
         fig, ax = plt.subplots()
         df.plot.scatter(x=strike_col, y=iv_col, ax=ax)
         st.pyplot(fig)
 
-# -----------------------------
+# =========================================================
 # AI Insights
-# -----------------------------
+# =========================================================
 if df is not None:
-    st.subheader("🤖 AI Insights")
+    st.subheader(TXT[LANG]["ai_h"])
 
-    # Advanced: hide creativity here
-    with st.expander("Advanced"):
+    # Advanced: creativity
+    with st.expander(TXT[LANG]["adv"]):
         creativity = st.slider(
-            "Creativity",
+            TXT[LANG]["creativity"],
             0.0, 1.0, 0.20,
-            help="Lower = more factual/grounded. Higher = more speculative language and bolder suggestions."
+            help=TXT[LANG]["creativity_help"]
         )
 
     # Build CSV text & token estimate
@@ -251,41 +417,27 @@ if df is not None:
     else:
         data_block = f"PROFILE:\n{profile_text}"
 
-    # Human-friendly notice placed here (under AI header)
+    # Human-friendly notice
     ROWS, COLS = df.shape
     if approx_tokens < 5000:
         st.markdown(
-            f"""
-### ✅ Full file will be analyzed
-The AI will read **all rows and columns** of your file  
-(~{ROWS:,} rows × {COLS} columns, ~{int(approx_tokens):,} tokens).
-"""
+            f"### {TXT[LANG]['notice_full_h']}\n"
+            + TXT[LANG]['notice_full_p'].format(rows=f"{ROWS:,}", cols=COLS, tok=int(approx_tokens))
         )
     else:
         st.markdown(
-            f"""
-### 📦 Large file detected
-To keep things fast and within the demo budget, the AI will analyze a **compact summary** instead of every row.
-
-**What the AI will see:**
-- Total size: **{ROWS:,} rows × {COLS} columns**
-- All **column names**
-- First **{PROFILE_HEAD} rows** as a preview
-- **Numeric stats** (mean, std, min, max, quartiles)
-- **Text stats** (unique values, most frequent, frequency)
-
-*Tip: Insights may be broader than if we sent the entire file.*
-"""
+            f"### {TXT[LANG]['notice_large_h']}\n"
+            + TXT[LANG]['notice_large_p'].format(rows=f"{ROWS:,}", cols=COLS, head=PROFILE_HEAD)
         )
 
-    # Domain guidance (generic; not hard-coded to options)
-    domain_hints = {
-        "Auto (data-driven only)": """
+    # Domain guidance (kept simple; same constraints as your original file)
+    domain_hints_en = {
+        "auto": """
 Constraints:
 - Actions must be tactical and directly tied to the dataset’s columns (mention fields/thresholds).
 - Avoid organizational/process/marketing advice unless explicitly grounded in the data.
 """,
-        "Finance": """
+        "fin": """
 Constraints (Finance):
 - Focus on financial signals in the data: price/return behavior, volatility/variance, spreads/margins, volume/turnover,
   cash-flow or P&L drivers, risk/outlier detection, time-series patterns, and benchmark comparisons if present.
@@ -293,59 +445,96 @@ Constraints (Finance):
   use limit/conditional orders or rebalance windows; monitor spikes/divergences relative to recent baseline.
 - Do NOT propose org/team/process/marketing changes unless they are explicitly evidenced by the data.
 """,
-        "Marketing / Growth": """
+        "mkt": """
 Constraints (Marketing/Growth):
 - Focus on acquisition, activation, conversion, retention, channel and creative performance, CAC/LTV proxies if present.
 - Prefer actions like: reallocate to higher-ROI channels, test X vs Y, tighten targeting based on segment lift.
 """,
-        "Sales": """
+        "sales": """
 Constraints (Sales):
 - Focus on pipeline stages, win/loss, ACV, velocity, territory/segment and rep performance.
 - Prefer actions like: fix stage bottlenecks, target high-propensity segments, tighten qualification rules.
 """,
-        "Product": """
+        "prod": """
 Constraints (Product):
 - Focus on usage cohorts, feature adoption, activation, retention/churn drivers, and key drop-off steps.
 - Prefer actions like: ship quick wins for sticky features, address drop-off points, A/B critical flows.
 """,
-        "Operations": """
+        "ops": """
 Constraints (Operations):
 - Focus on throughput, cycle time, SLA, defects, costs, and bottlenecks.
 - Prefer actions like: set SLA/threshold alerts, remove queues, standardize high-variance steps.
 """,
-        "Customer Support / Success": """
+        "cs": """
 Constraints (CS/CX):
 - Focus on CSAT/NPS, first response/resolution time, contact drivers, churn risk signals.
 - Prefer actions like: deflect top drivers, improve time-to-first-response, proactive outreach to at-risk cohorts.
 """,
-        "HR / People": """
+        "hr": """
 Constraints (HR/People):
 - Focus on hiring funnel, time-to-fill, retention, performance distribution, engagement.
 - Prefer actions like: strengthen top-of-funnel sources, address attrition hotspots, refine leveling/comp bands.
 """,
-        "Risk / Compliance": """
+        "risk": """
 Constraints (Risk/Compliance):
 - Focus on anomalies, threshold breaches, exposure concentration, control failures.
 - Prefer actions like: escalate breaches, set tighter limits/alerts, add monitoring on high-risk segments.
 """,
-        "Engineering / Data": """
+        "eng": """
 Constraints (Eng/Data):
 - Focus on latency, error rates, infra cost, data quality/freshness, pipeline reliability.
 - Prefer actions like: fix P95 outliers, add alerts, optimize hot paths, backfill data gaps.
 """,
     }
-    selected_hint = domain_hints.get(domain, "")
+
+    # Minimal German wording for hints (ok to keep short per your request)
+    domain_hints_de = {
+        "auto": "Hinweis: Maßnahmen strikt an Spalten/Werten im Datensatz ausrichten; keine allgemeinen Orga-/Marketing-Tipps.",
+        "fin":  "Hinweis (Finance): Signale wie Rendite, Volatilität, Spreads, Volumen; Schwellen/Alerts, Rebalancing, Ausreißer.",
+        "mkt":  "Hinweis (Marketing): Akquise/Aktivierung/Conversion/Retention; Budget zu ROI-Kanälen, Tests X vs. Y.",
+        "sales":"Hinweis (Sales): Pipeline-Stufen, Win/Loss, Velocity; Engpässe beheben, Segmente priorisieren.",
+        "prod": "Hinweis (Product): Nutzung/Adoption/Cohorts, Drop-offs; schnelle Produktmaßnahmen, A/B kritischer Flows.",
+        "ops":  "Hinweis (Operations): Durchsatz, SLA, Fehler, Kosten, Engpässe; Alerts, Standardisierung.",
+        "cs":   "Hinweis (Support): CSAT/NPS, Reaktions-/Lösungszeit, Treiber; Deflection/Proaktivität.",
+        "hr":   "Hinweis (HR): Funnel, Time-to-Fill, Retention; Quellen stärken, Abwanderungspunkte adressieren.",
+        "risk": "Hinweis (Risk): Anomalien, Schwellwertverletzungen, Konzentrationen; eskalieren, Limits/Monitoring.",
+        "eng":  "Hinweis (Eng/Data): Latenz, Fehlerquote, Kosten, Datenqualität; P95 fixen, Alerts, Hot Paths optimieren.",
+    }
+
+    selected_hint = (domain_hints_de if LANG=="de" else domain_hints_en).get(domain_key, "")
 
     # Generate button + call
-    if st.button("✨ Generate AI Insights", key="ai_button"):
-        with st.spinner("⏳ Processing, please wait..."):
+    if st.button(TXT[LANG]["btn_generate"], key="ai_button"):
+        with st.spinner(TXT[LANG]["spinner"]):
             api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
             if not api_key:
-                st.warning("No API key found. Set OPENAI_API_KEY in Streamlit → Settings → Secrets.")
+                st.warning(TXT[LANG]["no_key"])
             else:
                 try:
                     client = OpenAI(api_key=api_key)
-                    prompt = f"""
+
+                    # Prompt (output language matches UI)
+                    if LANG == "de":
+                        prompt = f"""
+Du bist ein präziser, knapper Datenanalyst.
+
+Der Datensatz wurde als CSV hochgeladen.
+{data_block}
+
+Aufgabe:
+1) Identifiziere 3–5 auffällige Muster/Trends/Anomalien.
+2) Erkläre wahrscheinliche Ursachen in einfacher Sprache (nur aus den vorliegenden Daten ableiten).
+3) Gib 3 priorisierte Maßnahmen mit erwartetem Impact (Low/Med/High) und kurzer Begründung.
+
+Format:
+- **Erkenntnisse**: Aufzählung
+- **Ursachen**: Aufzählung
+- **Maßnahmen**: nummerierte Liste mit (Impact: …) und Einzeiler-Rationale.
+
+{selected_hint}
+""".strip()
+                    else:
+                        prompt = f"""
 You are a concise data analyst.
 
 The dataset was uploaded as a CSV.
@@ -363,16 +552,17 @@ Format:
 
 {selected_hint}
 """.strip()
+
                     resp = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=0.4 if 'creativity' not in locals() else float(creativity),
+                        temperature=float(creativity),
                         max_tokens=700,
                     )
-                    st.success("✅ Done!")
+                    st.success(TXT[LANG]["done"])
                     st.markdown(resp.choices[0].message.content)
-                    st.caption("⚡ Powered by gpt-4o-mini • Full data for small files, compact profile for large files.")
+                    st.caption(TXT[LANG]["caption_model"])
                 except Exception as e:
-                    st.error(f"OpenAI error: {e}")
+                    st.error(TXT[LANG]["openai_err"].format(err=e))
 else:
-    st.info("⬆️ Upload a CSV to begin.")
+    st.info(TXT[LANG]["upload_prompt"])
